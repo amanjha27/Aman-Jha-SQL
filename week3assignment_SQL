@@ -1,0 +1,407 @@
+1)	You are given a table, Projects, containing three columns: Task ID, Start Date and End Date. It is guaranteed that the difference between the End Date and the Start Date is equal to 1 day for each row in the table.
+
+Code:
+with TaskGroup as (
+    select
+        Task_ID,
+        Start_Date,
+        End_Date,
+        ROW_NUMBER() OVER (order by Start_Date) - 
+        ROW_NUMBER() OVER (PARTITION by DATEADD(day, -ROW_NUMBER() OVER (order by Start_Date), Start_Date) order by Start_Date) as Project_ID
+    from Projects
+)
+select
+    MIN(Start_Date) as Start_Date,
+    MAX(End_Date) as End_Date,
+    DATEDIFF(day, MIN(Start_Date), MAX(End_Date)) + 1 as Duration
+from TaskGroup
+group by Project_ID
+order by Duration, MIN(Start_Date);
+
+2)	You are given three tables: Students, Friends and Packages. Students contains two columns: ID and Name. Friends contains two columns: ID and Friend ID (ID of the ONLY best friend). Packages contains two columns: ID and Salary (offered salary in $ thousands per month).
+Write a query to output the names of those students whose best friends got offered a higher salary than them. Names must be ordered by the salary amount offered to the best friends. It is guaranteed that no two students got same salary offer.
+
+Code:
+select
+    s1.Name AS StudentName,
+    s2.Name AS BestFriendName,
+    p2.Salary AS BestFriendSalary
+from
+    Students s1
+join
+    Friends f on s1.ID = f.ID
+join
+    Students s2 on f.Friend_ID = s2.ID
+join
+    Packages p1 on s1.ID = p1.ID
+join
+    Packages p2 on s2.ID = p2.ID
+where
+    p2.Salary > p1.Salary
+order by
+    p2.Salary;
+
+3)	You are given a table, Functions, containing two columns: X and Y. 
+Two pairs (X1, Y1) and (X2, Y2) are said to be symmetric pairs if X1=Y2 and X2 = Y1.
+Write a query to output all such symmetric pairs in ascending order by the value of X.
+
+Code:
+select distinct
+    f1.X AS X,
+    f1.Y AS Y
+from
+    Functions f1
+join
+    Functions f2 on f1.X = f2.Y and f1.Y = f2.X
+where
+    f1.X < f1.Y
+order by
+    f1.X;
+
+4)	Samantha interviews many candidates from different colleges using coding challenges and contests. 
+Write a query to print the contest id, hacker_id, name, and the sums of total submissions, total accepted submissions, total views, and total_unique views for each contest sorted by contest id. Exclude the contest from the result if all four sums are. 
+Note: A specific contest can be used to screen candidates at more than one college, but each college only holds screening contest.
+
+Code:
+select
+    c.contest_id,
+    c.hacker_id,
+    h.name,
+    coalesce(sum(v.total_views), 0) as total_views,
+    coalesce(sum(v.total_unique_views), 0) as total_unique_views,
+    coalesce(sum(s.total_submissions), 0) as total_submissions,
+    coalesce(sum(s.total_accepted_submissions), 0) as total_accepted_submissions
+from
+    contests c
+join
+    hackers h on c.hacker_id = h.hacker_id
+join
+    colleges co on c.contest_id = co.contest_id
+join
+    challenges ch on co.college_id = ch.college_id
+left join
+    view_stats v on ch.challenge_id = v.challenge_id
+left join
+    submission_stats s on ch.challenge_id = s.challenge_id
+group by
+    c.contest_id, c.hacker_id, h.name
+having
+    sum(v.total_views) > 0 or
+    sum(v.total_unique_views) > 0 or
+    sum(s.total_submissions) > 0 or
+    sum(s.total_accepted_submissions) > 0
+order by
+    c.contest_id;
+
+5)	Julia conducted a days of learning SQL contest. The start date of the contest was March 01, 2016 and the end date was March 15, 2016.
+Write a query to print the total number of unique hackers who made at least submission each day (starting on the first day of the contest) and find the hacker_id and name of the hacker who made maximum number of submissions each day. If more than one such hacker has a maximum number of submissions, print the lowest hacker_id. The query should print this information for each day of the contest, sorted by the date.
+
+Code:
+with daterange as (
+    select date '2016-03-01' as submission_date
+    union all
+    select submission_date + interval '1' day
+    from daterange
+    where submission_date < date '2016-03-15'
+),
+dailysubmissions as (
+    select
+        dr.submission_date,
+        s.hacker_id,
+        count(s.submission_id) as submissions_count
+    from
+        daterange dr
+    left join
+        submissions s on dr.submission_date = s.submission_date
+    group by
+        dr.submission_date, s.hacker_id
+),
+uniquehackers as (
+    select
+        submission_date,
+        count(distinct hacker_id) as unique_hackers
+    from
+        dailysubmissions
+    group by
+        submission_date
+),
+maxsubmissions as (
+    select
+        submission_date,
+        hacker_id,
+        submissions_count
+    from (
+        select
+            submission_date,
+            hacker_id,
+            submissions_count,
+            row_number() over (partition by submission_date order by submissions_count desc, hacker_id) as rn
+        from
+            dailysubmissions
+    ) as ranked
+    where
+        rn = 1
+)
+
+select
+    u.submission_date,
+    u.unique_hackers,
+    m.hacker_id,
+    h.name,
+    m.submissions_count
+from
+    uniquehackers u
+join
+    maxsubmissions m on u.submission_date = m.submission_date
+join
+    hackers h on m.hacker_id = h.hacker_id
+order by
+    u.submission_date;
+
+6)	Consider P1(a,b) and P2(c,d) to be two points on a 2D plane. 
+•	happens to equal the minimum value in Northern Latitude (LAT_N in STATION).
+•	happens to equal the minimum value in Western Longitude (LONG_W in STATION).
+•	happens to equal the maximum value in Northern Latitude (LAT_N in STATION).
+•	happens to equal the maximum value in Western Longitude (LONG_W in STATION).
+Query the Manhattan Distance between points P1 and P2 and round it to a scale of decimal places.
+
+Code:
+with points as (
+    select
+        min(lat_n) as min_lat,
+        min(long_w) as min_long,
+        max(lat_n) as max_lat,
+        max(long_w) as max_long
+    from
+        station
+)
+select
+    round(abs(min_lat - max_lat) + abs(min_long - max_long), 4) as manhattan_distance
+from
+    points;
+
+7)	Write a query to print all prime numbers less than or equal to 1000. Print your result on a single line and use the ampersand (&) character as your separator (instead of a space). For example, the output for all prime numbers <=10 would be:
+
+Code:
+with recursive numbers as (
+    select 2 as num
+    union all
+    select num + 1
+    from numbers
+    where num < 1000
+),
+primenumbers as (
+    select num
+    from numbers
+    where num not in (
+        select n.num
+        from numbers n
+        join numbers m on m.num <= sqrt(n.num) and n.num % m.num = 0 and m.num > 1
+    )
+)
+select string_agg(cast(num as varchar), '&') as prime_numbers
+from primenumbers;
+
+8)	Pivot the Occupation column in OCCUPATIONS so that each Name is sorted alphabetically and displayed underneath its corresponding Occupation. The output column headers should be Doctor, Professor, Singer, and Actor, respectively.
+Note: Print NULL when there are no more names corresponding to an occupation.
+
+Code:
+with occupationranks as (
+    select
+        name,
+        occupation,
+        row_number() over (partition by occupation order by name) as row_num
+    from
+        occupations
+),
+pivoted as (
+    select
+        max(case when occupation = 'doctor' then name end) as doctor,
+        max(case when occupation = 'professor' then name end) as professor,
+        max(case when occupation = 'singer' then name end) as singer,
+        max(case when occupation = 'actor' then name end) as actor
+    from
+        occupationranks
+    group by
+        row_num
+)
+select
+    doctor,
+    professor,
+    singer,
+    actor
+from
+    pivoted;
+
+9)	Few You are given a table, BST, containing two columns: N and P, where N represents the value of a node in Binary Tree, and P is the parent of N.
+Write a query to find the node type of Binary Tree ordered by the value of the node. Output one of the following for each node
+Root: If node is the root node.
+Leaf: If the node is a leaf node.
+Inner: If node is neither root nor leaf node.
+
+Code:
+with nodetype as (
+    select
+        n,
+        p,
+        case
+            when p is null then 'Root'
+            when n not in (select distinct p from bst) then 'Leaf'
+            else 'Inner'
+        end as node_type
+    from
+        bst
+)
+select
+    n,
+    node_type
+from
+    nodetype
+order by
+    n;
+
+10)	Amber's conglomerate corporation just acquired some new companies. Each of the companies follows this hierarchy:
+Founder => Lead Manager => Senior Manager => Manager => Employee
+Given the table schemas below, write a query to print the company code, founder name, total number of lead managers, total number of senior managers, total number of managers, and total number of employees. Order your output by ascending company code. 
+
+Note:
+•	The tables may contain duplicate records.
+•	The company code is string, so the sorting should not be numeric. For example, if
+•	The company codes are C1, C2, and C10, then the ascending company codes will be C1, C10 and C 2.
+
+Code:
+with employeecounts as (
+    select
+        company_code,
+        count(distinct case when lead_manager_code is not null then lead_manager_code end) as lead_managers_count,
+        count(distinct case when senior_manager_code is not null then senior_manager_code end) as senior_managers_count,
+        count(distinct case when manager_code is not null then manager_code end) as managers_count,
+        count(distinct employee_code) as total_employees_count
+    from
+        employee
+    group by
+        company_code
+)
+select
+    c.company_code,
+    c.founder,
+    coalesce(ec.lead_managers_count, 0) as lead_managers_count,
+    coalesce(ec.senior_managers_count, 0) as senior_managers_count,
+    coalesce(ec.managers_count, 0) as managers_count,
+    coalesce(ec.total_employees_count, 0) as total_employees_count
+from
+    company c
+left join
+    employeecounts ec on c.company_code = ec.company_code
+order by
+    c.company_code;
+
+11)	You are given three tables: Students, Friends and Packages. Students contains two columns: ID and Name. Friends contains two columns: ID and Friend_ID (ID of the ONLY best friend). Packages contains two columns: ID and Salary (offered salary in $ thousands per month).
+Write a query to output the names of those students whose best friends got offered a higher salary than them. Names must be ordered by the salary amount offered to the best friends. It is guaranteed that no two students got same salary offer.
+
+Code:
+select distinct
+    s.name
+from
+    students s
+join
+    friends f on s.id = f.id
+join
+    packages p1 on f.friend_id = p1.id
+join
+    packages p2 on s.id = p2.id
+where
+    p1.salary > p2.salary
+order by
+    p1.salary;
+
+12)	Display ratio of cost of job family in percentage by India and international (refer simulation data).
+
+Code:
+select
+    jobfamily,
+    country,
+    sum(case when country = 'India' then cost else 0 end) as india_cost,
+    sum(case when country = 'International' then cost else 0 end) as international_cost,
+    (sum(case when country = 'India' then cost else 0 end) / nullif(sum(cost), 0)) * 100 as india_percentage,
+    (sum(case when country = 'International' then cost else 0 end) / nullif(sum(cost), 0)) * 100 as international_percentage
+from
+    yourtable
+group by
+    jobfamily, country;
+
+13)	Find ratio of cost and revenue of a BU month on month.
+
+Code:
+select bu, 
+       month, 
+       sum(cost) as total_cost, 
+       sum(revenue) as total_revenue, 
+       sum(cost) / nullif(sum(revenue), 0) as cost_revenue_ratio
+from yourtable
+group by bu, month;
+
+14)	Show headcounts of sub band and percentage of headcount (without join, subquery and inner query).
+
+Code:
+select subband, 
+       count(employeeid) as headcount, 
+       (count(employeeid) / (select count(*) from yourtable)) * 100 as percentage_headcount
+from yourtable
+group by subband;
+
+15)	Find top 5 employees according to salary (without order by).
+
+Code:
+select employeeid, salary
+from yourtable
+fetch first 5 rows only;
+
+16)	Swap value of two columns in a table without using third variable or a table.
+
+Code:
+update yourtable
+set column1 = column2,
+    column2 = column1;
+
+17)	Create a user, create a login for that user provide permissions of DB_owner to the user.
+
+Code:
+create login shreyansh with password = 'helloguys';
+use yourdatabasename;
+create user somil for login shreyansh;
+alter role db_owner add member khizar;
+
+18)	Find Weighted average cost of employees month on month in a BU.
+
+Code:
+select bu, 
+       month, 
+       sum(cost * employeecount) / sum(employeecount) as weighted_average_cost
+from yourtable
+group by bu, month;
+
+19)	Samantha was tasked with calculating the average monthly salaries for all employees in the EMPLOYEES table but did not realize her keyboard's 0 key was broken until after completing the calculation. She wants your help finding the difference between her miscalculation (using salaries with any zeroes removed), and the actual average salary. 
+Write a query calculating the amount of error (i.e.: actual-miscalculated average monthly salaries) and round it up to the next integer.
+
+Code:
+WITH ActualAvg AS (
+    SELECT AVG(salary) AS actual_avg_salary
+    FROM EMPLOYEES
+),
+MiscalculatedAvg AS (
+    SELECT AVG(CAST(REPLACE(CAST(salary AS VARCHAR), '0', '') AS INT)) AS miscalculated_avg_salary
+    FROM EMPLOYEES
+)
+SELECT CEILING(actual_avg_salary - miscalculated_avg_salary) AS rounded_error
+FROM ActualAvg, MiscalculatedAvg;
+
+20)	Copy new data of one table to another (you do not have indicator for new data and old data).
+
+Code:
+INSERT INTO destination_table (id, column1, column2, column3)
+SELECT s.id, s.column1, s.column2, s.column3
+FROM source_table s
+LEFT JOIN destination_table d
+ON s.id = d.id
+WHERE d.id IS NULL;
